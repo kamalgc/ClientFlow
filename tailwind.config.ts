@@ -53,10 +53,28 @@ export default {
         },
       },
       borderRadius: {
+        xss:"calc(var(--radius) - .5px)",
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      backgroundImage: {
+        "button-dark": "linear-gradient(to bottom, #1C1F26, #2A2D35)",
+      },
+      textColor:{
+        "text-dark": "linear-gradient(to bottom, #1C1F26, #2A2D35)",
+      },
+      boxShadow: {
+        // both shadows in a single utility
+        "btn": "inset 0 -6px 20px rgba(255, 255, 255, 0.25), 0 4px 6px rgba(0, 0, 0, 0.25)",
+      },
+      fontFamily: {
+            // 'sans' is a common choice to override the default sans-serif font
+            // You can also create a new key, e.g., 'display'
+            Inter: ['"Inter"', 'sans-serif'], 
+            // Or if you want a custom utility class:
+            // display: ['"Your Font Name"', 'cursive'], 
+          },
     },
   },
   plugins: [require("tailwindcss-animate")],

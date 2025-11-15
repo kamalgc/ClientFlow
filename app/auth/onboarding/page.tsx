@@ -1,5 +1,6 @@
-import { LoginForm } from "@/components/login-form";
-import { ThemeSwitcher } from "@/components/theme-switcher";
+import { Onboarding } from '@/components/onboarding'
+import { ThemeSwitcher } from '@/components/theme-switcher'
+import React from 'react'
 
 export default function Page() {
   return (
@@ -11,8 +12,8 @@ export default function Page() {
       </div>
 
       <div className="w-full max-w-sm">
-        <LoginForm />
+        <Onboarding />
       </div>
     </div>
-  ); 
+  )
 }
