@@ -1,263 +1,273 @@
-'use client'
+"use client";
 
-import { useState } from "react"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import SettingsHeader from "@/components/settings-header"
-import { toast } from "sonner"
-import { Loader2 } from "lucide-react"
-import SettingsSidebar from "@/components/SettingsSidebar"
+import { useState, useEffect } from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
+import { useSettings } from "./SettingsContext";
+import { createClient } from "@/lib/supabase/client";
+import SettingsShell from "./SettingsShell";
+import Loader from "@/components/loader";
 
 export default function ProfileSettings() {
-  const [fullName, setFullName] = useState("")
-  const [email, setEmail] = useState("")
-  const [profilePicture, setProfilePicture] = useState<File | null>(null)
-  const [profilePicturePreview, setProfilePicturePreview] = useState<string | null>(null)
+  const { data, loading, updateData } = useSettings();
+  const supabase = createClient();
 
-  const [saving, setSaving] = useState(false)
-  const [emailError, setEmailError] = useState("")
-  const [nameError, setNameError] = useState("")
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [profilePicture, setProfilePicture] = useState<File | null>(null);
+  const [profilePicturePreview, setProfilePicturePreview] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [emailError, setEmailError] = useState("");
+  const [nameError, setNameError] = useState("");
+
+  // Initialize form with data from context
+  useEffect(() => {
+    if (data) {
+      setFullName(data.fullName);
+      setEmail(data.email);
+      setProfilePicturePreview(data.profilePictureUrl);
+    }
+  }, [data]);
 
   const validateEmail = (email: string) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    return emailRegex.test(email)
-  }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
 
   const validateForm = () => {
-    let isValid = true
-
-    setEmailError("")
-    setNameError("")
+    let isValid = true;
+    setEmailError("");
+    setNameError("");
 
     if (!fullName.trim()) {
-      setNameError("Full name is required")
-      isValid = false
+      setNameError("Full name is required");
+      isValid = false;
     } else if (fullName.trim().length < 2) {
-      setNameError("Full name must be at least 2 characters")
-      isValid = false
+      setNameError("Full name must be at least 2 characters");
+      isValid = false;
     }
 
     if (!email.trim()) {
-      setEmailError("Email is required")
-      isValid = false
+      setEmailError("Email is required");
+      isValid = false;
     } else if (!validateEmail(email)) {
-      setEmailError("Please enter a valid email address")
-      isValid = false
+      setEmailError("Please enter a valid email address");
+      isValid = false;
     }
 
-    return isValid
-  }
+    return isValid;
+  };
 
-  const handleProfilePictureChange = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const handleProfilePictureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      toast.error("File size must be less than 5MB")
-      return
+      toast.error("File size must be less than 5MB");
+      return;
     }
 
-    const allowedTypes = ["image/jpeg", "image/jpg", "image/png"]
+    const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
     if (!allowedTypes.includes(file.type)) {
-      toast.error("Only JPG and PNG files are supported")
-      return
+      toast.error("Only JPG and PNG files are supported");
+      return;
     }
 
-    setProfilePicture(file)
+    setProfilePicture(file);
 
-    const reader = new FileReader()
+    const reader = new FileReader();
     reader.onload = (event) => {
-      setProfilePicturePreview(event.target?.result as string)
-    }
-    reader.readAsDataURL(file)
-  }
-
-  // placeholder — swap with Supabase Storage later
-  const uploadProfilePicture = async (file: File) => {
-    return new Promise<string>((resolve) => {
-      setTimeout(() => {
-        resolve(`/uploads/profile-${Date.now()}.jpg`)
-      }, 1000)
-    })
-  }
+      setProfilePicturePreview(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleUpdateProfile = async () => {
     if (!validateForm()) {
-      toast.error("Please fix the errors before saving")
-      return
+      toast.error("Please fix the errors before saving");
+      return;
     }
 
-    setSaving(true)
+    setSaving(true);
 
     try {
-      let profilePictureUrl: string | null = null
+      let profilePictureUrl = data?.profilePictureUrl || null;
 
       if (profilePicture) {
-        profilePictureUrl = await uploadProfilePicture(profilePicture)
+        const fileExt = profilePicture.name.split(".").pop();
+        const fileName = `${data?.userId}-${Date.now()}.${fileExt}`;
+        const filePath = `avatars/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("assets")
+          .upload(filePath, profilePicture);
+
+        if (uploadError) {
+          console.error("Upload error:", uploadError);
+          toast.error("Failed to upload profile picture");
+          setSaving(false);
+          return;
+        }
+
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("assets").getPublicUrl(filePath);
+
+        profilePictureUrl = publicUrl;
       }
 
-      const res = await fetch("/api/user/getProfile", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fullName: fullName.trim(),
+      const { error } = await supabase
+        .from("users")
+        .update({
+          full_name: fullName.trim(),
           email: email.trim(),
-          profilePictureUrl,
-        }),
-      })
+          avatar_url: profilePictureUrl,
+        })
+        .eq("id", data?.userId);
 
-      const contentType = res.headers.get("content-type") || ""
-      const data = contentType.includes("application/json")
-        ? await res.json()
-        : null
-
-      if (!res.ok) {
-        const msg = (data && data.error) || "Failed to update profile"
-        toast.error(msg)
-        return
+      if (error) {
+        console.error("Update error:", error);
+        toast.error("Failed to update profile");
+        setSaving(false);
+        return;
       }
 
-      toast.success("Profile updated successfully!")
+      updateData({
+        fullName: fullName.trim(),
+        email: email.trim(),
+        profilePictureUrl,
+      });
+
+      toast.success("Profile updated successfully!");
     } catch (error) {
-      console.error("Update error:", error)
-      toast.error("Something went wrong. Please try again.")
+      console.error("Update error:", error);
+      toast.error("Something went wrong. Please try again.");
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
+  };
+
+  if (loading) {
+    return (
+      <SettingsShell>
+        <div className="px-8 py-8 flex items-center justify-center min-h-[400px]">
+          <Loader text="loading details...."/>
+        </div>
+      </SettingsShell>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* <SettingsHeader /> */}
-      <div className="flex">
-        {/* <SettingsSidebar active="Profile" /> */}
+    <SettingsShell>
+      <div className="px-8 py-8">
+        <div className="max-w-3xl">
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold text-gray-900 mb-1">Profile</h2>
+            <p className="text-sm text-gray-600">
+              Update your profile settings. Manage your personal information.
+            </p>
+          </div>
 
-        <main className="flex-1 p-8">
-          <div className="max-w-2xl space-y-8">
-            <div>
-              <h1 className="text-2xl font-semibold text-gray-900">Profile</h1>
-              <p className="text-gray-600 mt-1">
-                Update your profile settings. Manage your personal information.
+          <div className="space-y-6">
+            {/* Full name */}
+            <div className="space-y-2">
+              <Label htmlFor="fullName" className="text-sm font-medium text-gray-900">
+                Full name
+              </Label>
+              <Input
+                id="fullName"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className={`max-w-xl ${nameError ? "border-red-500" : ""}`}
+                placeholder="Enter your full name"
+              />
+              {nameError && <p className="text-sm text-red-500">{nameError}</p>}
+              <p className="text-sm text-gray-500">
+                Enter your full name as you'd like it to appear across your account. You can
+                only change this once every 30 days.
               </p>
             </div>
 
-            <div className="space-y-6">
-              {/* Full name */}
-              <div className="space-y-2">
-                <Label
-                  htmlFor="fullName"
-                  className="text-sm font-medium text-gray-900"
-                >
-                  Full name
-                </Label>
-                <Input
-                  id="fullName"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className={`max-w-md ${nameError ? "border-red-500" : ""}`}
-                  placeholder="Enter your full name"
-                />
-                {nameError && (
-                  <p className="text-sm text-red-500">{nameError}</p>
-                )}
-                <p className="text-sm text-gray-500">
-                  Enter your full name as you'd like it to appear across your
-                  account. You can only change this once every 30 days.
-                </p>
-              </div>
-
-              {/* Profile picture */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-900">
-                  Profile picture
-                </Label>
-                <div className="flex items-center space-x-4">
-                  <div className="relative">
-                    <input
-                      type="file"
-                      id="profilePicture"
-                      accept="image/jpeg,image/jpg,image/png"
-                      onChange={handleProfilePictureChange}
-                      className="hidden"
-                    />
-                    <label
-                      htmlFor="profilePicture"
-                      className="flex items-center justify-center w-16 h-16 border border-gray-200 rounded-lg cursor-pointer hover:border-gray-300 transition-colors bg-gray-50"
-                    >
-                      {profilePicturePreview ? (
-                        <img
-                          src={profilePicturePreview}
-                          alt="Profile preview"
-                          className="w-full h-full object-cover rounded-lg"
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center justify-center text-gray-400">
-                          <div className="text-xs text-center">
-                            <div>Upload</div>
-                            <div>picture</div>
-                          </div>
-                        </div>
-                      )}
-                    </label>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm text-gray-500">
-                      Upload a professional photo to personalize your profile.
-                      Supported formats: JPG, PNG. Max size 5MB
-                    </p>
-                  </div>
+            {/* Profile picture */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-900">Profile picture</Label>
+              <div className="flex items-start gap-4">
+                <div className="relative">
+                  <input
+                    type="file"
+                    id="profilePicture"
+                    accept="image/jpeg,image/jpg,image/png"
+                    onChange={handleProfilePictureChange}
+                    className="hidden"
+                  />
+                  <label
+                    htmlFor="profilePicture"
+                    className="flex items-center justify-center w-16 h-16 border border-gray-200 rounded-lg cursor-pointer hover:border-gray-300 transition-colors bg-white"
+                  >
+                    {profilePicturePreview ? (
+                      <img
+                        src={profilePicturePreview}
+                        alt="Profile preview"
+                        className="w-full h-full object-cover rounded-lg"
+                      />
+                    ) : (
+                      <div className="text-center text-xs text-gray-400">
+                        <div>Upload</div>
+                        <div>picture</div>
+                      </div>
+                    )}
+                  </label>
                 </div>
               </div>
+              <p className="text-sm text-gray-500">
+                Upload a professional photo to personalize your profile. Supported formats:
+                JPG, PNG. Max size 5MB
+              </p>
+            </div>
 
-              {/* Email */}
-              <div className="space-y-2">
-                <Label
-                  htmlFor="email"
-                  className="text-sm font-medium text-gray-900"
-                >
-                  Email
-                </Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className={`max-w-md ${emailError ? "border-red-500" : ""}`}
-                  placeholder="Enter your email address"
-                />
-                {emailError && (
-                  <p className="text-sm text-red-500">{emailError}</p>
+            {/* Email */}
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-sm font-medium text-gray-900">
+                Email
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={`max-w-xl ${emailError ? "border-red-500" : ""}`}
+                placeholder="Enter your email address"
+              />
+              {emailError && <p className="text-sm text-red-500">{emailError}</p>}
+              <p className="text-sm text-gray-500">
+                Type a verified email to display on your profile. When changing emails,
+                verification will be required.
+              </p>
+            </div>
+
+            {/* Update button */}
+            <div className="pt-4">
+              <Button
+                onClick={handleUpdateProfile}
+                disabled={saving}
+                className="bg-black hover:bg-gray-800 text-white px-6"
+              >
+                {saving ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 size={16} className="animate-spin" />
+                    Updating...
+                  </span>
+                ) : (
+                  "Update profile"
                 )}
-                <p className="text-sm text-gray-500">
-                  Type a verified email to display on your profile. When
-                  changing emails, verification will be required.
-                </p>
-              </div>
-
-              {/* Update button */}
-              <div className="pt-4">
-                <Button
-                  onClick={handleUpdateProfile}
-                  disabled={saving}
-                  className="bg-button-dark text-white hover:bg-blue-700 px-6"
-                >
-                  {saving ? (
-                    <span className="flex items-center space-x-2">
-                      <Loader2 size={16} className="animate-spin" />
-                      <span>Updating...</span>
-                    </span>
-                  ) : (
-                    "Update profile"
-                  )}
-                </Button>
-              </div>
+              </Button>
             </div>
           </div>
-        </main>
+        </div>
       </div>
-    </div>
-  )
+    </SettingsShell>
+  );
 }

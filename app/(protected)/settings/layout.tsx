@@ -1,6 +1,6 @@
 import SettingsHeader from "@/components/settings-header";
 import SettingsSidebar from "@/components/SettingsSidebar";
-import { UserProfileProvider } from "./_components/user-profile-context";
+import { SettingsProvider } from "./SettingsContext";
 
 export default function SettingsLayout({
   children,
@@ -13,7 +13,7 @@ export default function SettingsLayout({
       <div className="flex">
         <SettingsSidebar/>
         <main className="flex-1 p-8">
-          <UserProfileProvider>{children}</UserProfileProvider>
+          <SettingsProvider>{children}</SettingsProvider>
         </main>
       </div>
     </div>

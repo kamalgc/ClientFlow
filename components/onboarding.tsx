@@ -31,6 +31,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
+// (For when you show the avatar somewhere in the UI)
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export function Onboarding({
   className,
@@ -58,6 +60,121 @@ export function Onboarding({
   const [completedUserId, setCompletedUserId] = React.useState<string | null>(
     null
   );
+
+  // --- helpers for avatar initials & image generation ---
+
+  const getInitials = (fullName: string) => {
+    if (!fullName) return "";
+    const parts = fullName
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    const firstTwo = parts.slice(0, 2);
+    return firstTwo.map((p) => p[0].toUpperCase()).join("");
+  };
+
+  const generateAvatarImageFile = (
+    fullName: string
+  ): Promise<File | null> => {
+    const initials = getInitials(fullName) || "?";
+
+    const canvas = document.createElement("canvas");
+    const size = 256;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+
+    if (!ctx) return Promise.resolve(null);
+
+    // Background
+    ctx.fillStyle = "#111827"; // slate-900-ish
+    ctx.fillRect(0, 0, size, size);
+
+    // Text
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "bold 96px system-ui, -apple-system, BlinkMacSystemFont";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(initials, size / 2, size / 2);
+
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        if (!blob) return resolve(null);
+        const file = new File([blob], `avatar-${Date.now()}.png`, {
+          type: "image/png",
+        });
+        resolve(file);
+      }, "image/png");
+    });
+  };
+
+  const uploadLogo = async (userId: string): Promise<string | null> => {
+    if (!logoFile) return null;
+
+    try {
+      const fileExt = logoFile.name.split(".").pop();
+      const fileName = `${userId}-${Date.now()}.${fileExt}`;
+      const filePath = `logos/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("assets")
+        .upload(filePath, logoFile, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error("Logo upload error:", uploadError);
+        throw uploadError;
+      }
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("assets").getPublicUrl(filePath);
+
+      return publicUrl;
+    } catch (error) {
+      console.error("Error uploading logo:", error);
+      return null;
+    }
+  };
+
+  const uploadProfileAvatar = async (
+    userId: string,
+    fullName: string
+  ): Promise<string | null> => {
+    try {
+      const avatarFile = await generateAvatarImageFile(fullName);
+      if (!avatarFile) {
+        console.error("Failed to generate avatar file");
+        return null;
+      }
+
+      const fileName = `${userId}-${Date.now()}.png`;
+      const filePath = `profile_pictures/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("assets")
+        .upload(filePath, avatarFile, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error("Profile picture upload error:", uploadError);
+        throw uploadError;
+      }
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("assets").getPublicUrl(filePath);
+
+      return publicUrl;
+    } catch (error) {
+      console.error("Error uploading profile picture:", error);
+      return null;
+    }
+  };
 
   async function goNext() {
     if (step === 1) {
@@ -99,142 +216,122 @@ export function Onboarding({
     }
   };
 
-  const uploadLogo = async (userId: string): Promise<string | null> => {
-    if (!logoFile) return null;
-
+  const handleSubmit = async () => {
     try {
-      const fileExt = logoFile.name.split(".").pop();
-      const fileName = `${userId}-${Date.now()}.${fileExt}`;
-      const filePath = `logos/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("assets")
-        .upload(filePath, logoFile, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error("Logo upload error:", uploadError);
-        throw uploadError;
-      }
+      setLoading(true);
 
       const {
-        data: { publicUrl },
-      } = supabase.storage.from("assets").getPublicUrl(filePath);
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      return publicUrl;
-    } catch (error) {
-      console.error("Error uploading logo:", error);
-      return null;
-    }
-  };
-
-  const handleSubmit = async () => {
-  try {
-    setLoading(true);
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      toast.error("Please log in to continue");
-      router.push("/auth/login");
-      return;
-    }
-
-    // 🚫 HARD STOP if user already completed onboarding
-    const { data: profile, error: profileError } = await supabase
-      .from("users")
-      .select("onboarding_completed")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (profileError && profileError.code !== "PGRST116") {
-      console.error("Error fetching profile:", profileError);
-      toast.error("Something went wrong. Please try again.");
-      return;
-    }
-
-    if (profile?.onboarding_completed) {
-      // they somehow reached onboarding again – send them away
-      toast.info("You’ve already set up your workspace.");
-      router.replace("/dashboard");
-      return;
-    }
-
-    // 👉 from here on it’s safe to run your existing logic:
-    // 1) check custom_link availability
-    const { data: existingUser, error: checkError } = await supabase
-      .from("users")
-      .select("id")
-      .eq("custom_link", formData.customLink)
-      .neq("id", user.id)
-      .maybeSingle();
-
-    if (checkError && checkError.code !== "PGRST116") {
-      console.error("Error checking custom link:", checkError);
-      toast.error("Could not verify username availability. Please try again.");
-      return;
-    }
-
-    if (existingUser) {
-      toast.error("Username already taken");
-      return;
-    }
-
-    // 2) upload logo
-    let logoUrl = null;
-    if (logoFile) {
-      const loadingToast = toast.loading("Uploading logo...");
-      logoUrl = await uploadLogo(user.id);
-      toast.dismiss(loadingToast);
-
-      if (!logoUrl) {
-        toast.error("Failed to upload logo. Please try again.");
+      if (userError || !user) {
+        toast.error("Please log in to continue");
+        router.push("/auth/login");
         return;
       }
-    }
 
-    // 3) upsert user & set onboarding_completed
-    const { error: upsertError } = await supabase.from("users").upsert(
-      {
-        id: user.id,
-        email: user.email,
-        full_name: formData.fullName,
-        company_name: formData.companyName,
-        business_type: formData.businessType,
-        custom_link: formData.customLink,
-        logo_url: logoUrl,
-        onboarding_completed: true,
-      },
-      { onConflict: "id" }
-    );
+      // 🚫 HARD STOP if user already completed onboarding
+      const { data: profile, error: profileError } = await supabase
+        .from("users")
+        .select("onboarding_completed")
+        .eq("id", user.id)
+        .maybeSingle();
 
-    if (upsertError) {
-      console.error("Save error:", upsertError);
-
-      if (upsertError.code === "23505") {
-        toast.error("Username already taken");
-      } else {
-        toast.error("Failed to save data: " + upsertError.message);
+      if (profileError && profileError.code !== "PGRST116") {
+        console.error("Error fetching profile:", profileError);
+        toast.error("Something went wrong. Please try again.");
+        return;
       }
-      return;
+
+      if (profile?.onboarding_completed) {
+        toast.info("You’ve already set up your workspace.");
+        router.replace("/dashboard");
+        return;
+      }
+
+      // 1) check custom_link availability
+      const normalizedCustomLink = formData.customLink
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, "");
+
+      const { data: existingUser, error: checkError } = await supabase
+        .from("users")
+        .select("id")
+        .eq("custom_link", normalizedCustomLink)
+        .neq("id", user.id)
+        .maybeSingle();
+
+      if (checkError && checkError.code !== "PGRST116") {
+        console.error("Error checking custom link:", checkError);
+        toast.error("Could not verify username availability. Please try again.");
+        return;
+      }
+
+      if (existingUser) {
+        toast.error("Username already taken");
+        return;
+      }
+
+      // 2) upload logo
+      let logoUrl: string | null = null;
+      if (logoFile) {
+        const loadingToast = toast.loading("Uploading logo...");
+        logoUrl = await uploadLogo(user.id);
+        toast.dismiss(loadingToast);
+
+        if (!logoUrl) {
+          toast.error("Failed to upload logo. Please try again.");
+          return;
+        }
+      }
+
+      // 3) generate & upload profile avatar based on initials
+      const profilePictureUrl = await uploadProfileAvatar(
+        user.id,
+        formData.fullName
+      );
+      console.log("Profile picture URL:", profilePictureUrl);
+
+      // 4) upsert user & set onboarding_completed
+      const { error: upsertError } = await supabase.from("users").upsert(
+        {
+          id: user.id,
+          email: user.email,
+          full_name: formData.fullName,
+          company_name: formData.companyName,
+          business_type: formData.businessType,
+          custom_link: normalizedCustomLink,
+          logo_url: logoUrl,
+          onboarding_completed: true,
+          // if you later add a `profile_picture_url` column, you can also save:
+          // profile_picture_url: profilePictureUrl,
+        },
+        { onConflict: "id" }
+      );
+
+      if (upsertError) {
+        console.error("Save error:", upsertError);
+
+        if (upsertError.code === "23505") {
+          toast.error("Username already taken");
+        } else {
+          toast.error("Failed to save data: " + upsertError.message);
+        }
+        return;
+      }
+
+      toast.success("Workspace created successfully!");
+      setCompletedUserId(user.id);
+      setSurveyOpen(true);
+    } catch (err) {
+      console.error("Onboarding error:", err);
+      toast.error("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
     }
-
-    toast.success("Workspace created successfully!");
-    setCompletedUserId(user.id);
-    setSurveyOpen(true);
-  } catch (err) {
-    console.error("Onboarding error:", err);
-    toast.error("Something went wrong. Please try again.");
-  } finally {
-    setLoading(false);
-  }
-};
-
+  };
 
   const handleSurveySubmit = async () => {
     if (!surveyHowFound) {
@@ -268,6 +365,8 @@ export function Onboarding({
   const handleSurveySkipOrClose = () => {
     router.push("/auth/plans");
   };
+
+  const initials = getInitials(formData.fullName);
 
   return (
     <>
@@ -304,6 +403,14 @@ export function Onboarding({
                     Tell us about your business so we can personalize your
                     account.
                   </FieldDescription>
+                  {/* Optional: show avatar preview based on full name */}
+                  {formData.fullName && (
+                    <Avatar className="mt-3 h-12 w-12">
+                      {/* If later you have profilePictureUrl, put it here */}
+                      <AvatarImage src={undefined} alt={formData.fullName} />
+                      <AvatarFallback>{initials}</AvatarFallback>
+                    </Avatar>
+                  )}
                 </>
               ) : (
                 <>
@@ -561,7 +668,7 @@ export function Onboarding({
             </Button>
             <Button
               type="button"
-              className="bg-button-dark shadow-btn text-white rounded-[8] border border-[#5E6371]"
+              className="bg-button-dark shadow-btn text-white rounded-[8] border border-[#5E5E5E]"
               onClick={handleSurveySubmit}
               disabled={surveySubmitting}
             >
