@@ -1,19 +1,21 @@
-// app/dashboard/page.tsx
+// app/(protected)/dashboard/page.tsx
 "use client";
 
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
 
-export default function Dashboard() {
-  const searchParams = useSearchParams();
+function DashboardContent() {
+  const searchParams = useSearchParams();       // ✅ now inside Suspense
   const sessionId = searchParams.get("session_id");
   const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
     if (sessionId) {
       setShowSuccess(true);
-      // Auto-hide after 5 seconds
-      setTimeout(() => setShowSuccess(false), 5000);
+      const id = setTimeout(() => setShowSuccess(false), 5000);
+      return () => clearTimeout(id); // cleanup
+    } else {
+      setShowSuccess(false);
     }
   }, [sessionId]);
 
@@ -40,8 +42,15 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Your dashboard content */}
       <h1 className="text-2xl font-bold">Dashboard</h1>
     </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense fallback={<div className="min-h-screen p-8" />}>
+      <DashboardContent />
+    </Suspense>
   );
 }
