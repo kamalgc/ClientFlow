@@ -1,7 +1,7 @@
 "use client";
 
-import Loader from "@/components/loader";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 import React from "react";
 
 type BillingPeriod = "monthly" | "yearly";
@@ -12,7 +12,7 @@ const STRIPE_LINKS: Record<string, string> = {
   "starter-monthly": "https://buy.stripe.com/test_00w5kE9PR3mvdeLcYL08g03",
   "premium-monthly": "https://buy.stripe.com/test_9B6fZi1jle198Yv3ob08g04",
   "starter-yearly": "https://buy.stripe.com/test_14A28s3rt6yH5MjcYL08g07",
-  // assuming this is Premium YEARLY (your message said "Premium monthly" twice)
+  // this one is premium yearly
   "premium-yearly": "https://buy.stripe.com/test_dRm9AUfab4qza2z2k708g06",
 };
 
@@ -63,10 +63,28 @@ const plans: {
 ];
 
 export default function PlansPage() {
+  const supabase = createClient();
   const [billingPeriod, setBillingPeriod] =
     React.useState<BillingPeriod>("monthly");
 
-  const handlePlanClick = (planId: PlanId) => {
+  const handlePlanClick = async (planId: PlanId) => {
+    // 1) Get current Supabase user
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error) {
+      console.error("supabase.auth.getUser error:", error);
+    }
+
+    // 2) If not logged in, send to your login page
+    if (!user) {
+      window.location.href = "/auth/login";
+      return;
+    }
+
+    // 3) Find correct Stripe URL for plan + billing period
     const key = `${planId}-${billingPeriod}`;
     const url = STRIPE_LINKS[key];
 
@@ -75,8 +93,14 @@ export default function PlansPage() {
       return;
     }
 
-    // redirect to Stripe Checkout
-    window.location.href = url;
+    // 4) Attach user data as query params so Stripe can use it
+    const params = new URLSearchParams({
+      client_reference_id: user.id,
+      prefilled_email: user.email ?? "",
+    });
+
+    // 5) Redirect to Stripe checkout
+    window.location.href = `${url}?${params.toString()}`;
   };
 
   return (
@@ -114,13 +138,7 @@ export default function PlansPage() {
               }`}
             >
               <span>Yearly</span>
-              <span
-                className={`rounded-full px-2 py-0.5 text-[12px] font-semibold ${
-                  billingPeriod === "yearly"
-                    ? " text-[#05C168]"
-                    : " text-[#05C168]"
-                }`}
-              >
+              <span className="rounded-full px-2 py-0.5 text-[12px] font-semibold text-[#05C168]">
                 -20%
               </span>
             </button>
@@ -145,7 +163,6 @@ export default function PlansPage() {
               >
                 {/* Title + description */}
                 <div className="mb-6 mx-1 bg-white p-5 rounded-[10] shadow-sm border-[#F0F0F0] border">
-                  {/* Popular badge */}
                   {plan.popular && (
                     <span className="absolute right-5 top-15 inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-[11px] font-medium text-blue-700">
                       Popular
@@ -193,7 +210,7 @@ export default function PlansPage() {
                       </li>
                     ))}
                   </ul>
-                  {/* Divider */}
+
                   <div className="mb-5 h-px w-full bg-neutral-200" />
                 </div>
 
