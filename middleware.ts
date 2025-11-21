@@ -1,7 +1,13 @@
 import { updateSession } from "@/lib/supabase/middleware";
-import { type NextRequest } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 export async function middleware(request: NextRequest) {
+  // Allow webhook routes to bypass auth
+  if (request.nextUrl.pathname.startsWith('/api/webhooks/')) {
+    return NextResponse.next();
+  }
+
+  // For all other routes, use Supabase auth
   return await updateSession(request);
 }
 
