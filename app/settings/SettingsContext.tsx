@@ -80,7 +80,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         // User/Profile
         fullName: userData.full_name || "",
         email: userData.email || user.email || "",
-        profilePictureUrl: userData.avatar_url || null,
+        profilePictureUrl: userData.profile_pic_url || null,
 
         // Account/Company (from users table since we have single table)
         companyName: userData.company_name || "",

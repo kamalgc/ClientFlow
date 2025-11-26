@@ -306,7 +306,7 @@ export function Onboarding({
           logo_url: logoUrl,
           onboarding_completed: true,
           // if you later add a `profile_picture_url` column, you can also save:
-          // profile_picture_url: profilePictureUrl,
+          profile_pic_url: profilePictureUrl,
         },
         { onConflict: "id" }
       );
